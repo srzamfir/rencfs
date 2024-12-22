@@ -1,11 +1,14 @@
 #![cfg(target_os = "linux")]
 mod linux_mount_setup;
 use linux_mount_setup::{count_files, TestGuard, DATA_PATH, MOUNT_PATH};
+use tracing_subscriber::fmt::format::FmtSpan;
 use std::{
     fs::{self, File},
-    io::{Read, Write},
+    io::{BufWriter, Read, Write},
     os::unix::fs::MetadataExt,
     path::Path,
+    process::Command,
+    sync::Mutex,
 };
 
 #[test]
@@ -146,4 +149,31 @@ fn it_create_empty_dir_check_attr() {
     }
     let res = fs::remove_dir_all(Path::new(&test_folder));
     assert!(res.is_ok(), "failed to delete [{}]", &test_folder);
+}
+
+#[test]
+fn it_git_clone_check_files() {
+    let file = File::create("clone.log").expect("Failed to create file");
+    let buff_writter = Mutex::new(BufWriter::new(file));
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(buff_writter)
+        .with_thread_names(false)
+        .with_max_level(tracing::Level::INFO)
+        .with_span_events(FmtSpan::ACTIVE)
+        .with_target(true)
+        .with_ansi(false)
+        .finish();
+    tracing::subscriber::set_global_default(subscriber).expect("Failed to set default subscriber");
+    println!("Initialized tracing subscriber");
+    let _guard = TestGuard::setup();
+    let checkout_folder = format!("{}{}", MOUNT_PATH, "/rust-by-example");
+    let clone_command = format!(
+        "GIT_TRACE_PACK_ACCESS=1 GIT_TRACE=1 git clone https://github.com/rust-lang/rust-by-example.git {}",
+        &checkout_folder
+    );
+    let _status = Command::new("sh").arg("-c").arg(clone_command).status();
+    let exists = fs::exists(Path::new(&checkout_folder));
+    assert!(exists.is_ok(), "failed to check");
+    let res = fs::remove_dir_all(Path::new(&checkout_folder));
+    assert!(res.is_ok(), "failed to delete [{}]", &checkout_folder);
 }
