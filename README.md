@@ -6,8 +6,8 @@
 [![build-and-tests](https://github.com/xoriors/rencfs/actions/workflows/build_and_tests.yaml/badge.svg)](https://github.com/xoriors/rencfs/actions/workflows/build_and_tests.yaml)
 [![release](https://github.com/xoriors/rencfs/actions/workflows/release.yaml/badge.svg)](https://github.com/xoriors/rencfs/actions/workflows/release.yaml)
 [![codecov](https://codecov.io/gh/xoriors/rencfs/graph/badge.svg?token=NUQI6XGF2Y)](https://codecov.io/gh/xoriors/rencfs)
-<a href="https://bit.ly/3UU1oXi"><img src="website/resources/slack.png" style = "width: 20px; height: 20px;"/></a>
-[![Open Source Helpers](https://www.codetriage.com/xoriors/rencfs/badges/users.svg)](https://www.codetriage.com/xoriors/rencfs)
+<a href="https://join.slack.com/t/rencfs/shared_invite/zt-2w9cpnql2-o0qtN_rXFNjHvp92qFhXCg"><img src="website/resources/slack.png" style = "width: 20px; height: 20px;"/></a>
+[![Open Source Helpers](https://www.codetriage.com/xoriors/rencfs/badges/users.svg?count=20)](https://www.codetriage.com/xoriors/rencfs)
 
 > [!WARNING]  
 > **This crate hasn't been audited; it's using `ring` crate, which is a well-known audited library, so in principle, at
@@ -28,21 +28,17 @@ data.
 
 # Introduction
 
+- It all started as a learning project for Rust and then evolved into something more.
 - Motivation
-  Create a `simple,` `performant,` `modular` and `ergonomic` yet `very secure` `encrypted filesystem` to protect
-  your `privacy`, which is also `open source` and is correctly and safely using `well-known audited` crates
-  as `cryptographic primitives.`
-- A short story
-  [The Hitchhiker’s Guide to Building an Encrypted Filesystem in Rust](docs/The_Hitchhiker_s_Guide_to_Building_an_Encrypted_Filesystem_in_Rust.pdf)
+  Create a `simple,` `performant,` `modular` and `ergonomic` yet `very secure` `encrypted filesystem` focused
+  on `privacy`, also `open source`, which correctly and safely uses `well-known and audited` crates
+  as `cryptographic primitives`.
+- Read an article [The Hitchhiker’s Guide to Building an Encrypted Filesystem in Rust](https://medium.com/system-weakness/the-hitchhikers-guide-to-building-an-encrypted-filesystem-in-rust-4d678c57d65c).
+- A one-pager [The Hitchhiker’s Guide to Building an Encrypted Filesystem in Rust](docs/The_Hitchhiker_s_Guide_to_Building_an_Encrypted_Filesystem_in_Rust.pdf).
 - Talks
-    - [The Hitchhiker’s Guide to Building an Encrypted Filesystem in Rust](https://startech-rd.io/hitchhikers-guide-to/) [@meetup.com/star-tech-rd-reloaded](https://www.meetup.com/star-tech-rd-reloaded/)
-      and [@OmniOpenCon](https://omniopencon.org/)
-    - [Basics of cryptography, Authenticated Encryption, Rust in cryptography and how to build an encrypted filesystem](https://www.youtube.com/live/HwmVxOl3pQg)
-      @ITDays and [slides](https://miro.com/app/board/uXjVLccxeCE=/?share_link_id=342563218323).
-    - Crate of the week
-      in [This Week in Rust](https://this-week-in-rust.org/blog/2024/08/07/this-week-in-rust-559/#cfp-projects)
-- It was [crate of the week](https://this-week-in-rust.org/blog/2024/08/14/this-week-in-rust-560/#crate-of-the-week) in
-  Aug 2024.
+    - [The Hitchhiker’s Guide to Building an Encrypted Filesystem in Rust](https://startech-rd.io/hitchhikers-guide-to/) @[meetup.com/star-tech-rd-reloaded](https://www.meetup.com/star-tech-rd-reloaded/) and @[OmniOpenCon](https://omniopencon.org/).
+    - [Basics of cryptography, Authenticated Encryption, Rust in cryptography and how to build an encrypted filesystem](https://www.youtube.com/live/HwmVxOl3pQg) @ITDays and [slides](https://miro.com/app/board/uXjVLccxeCE=/?share_link_id=342563218323).
+- It was [crate of the week](https://this-week-in-rust.org/blog/2024/08/14/this-week-in-rust-560/#crate-of-the-week) in Aug 2024.
 
 # Key features
 
@@ -106,7 +102,7 @@ Please look into [Flows](docs/readme/flows.md) for a detailed sequence flow desc
   hardware acceleration of AES
   on most CPUs via AES-NI. However, where hardware acceleration is unavailable, `ChaCha20Poly1305` is faster.
   Also, `ChaChaPoly1305` is better at `SIMD.`
-- [⚠️ Security ](docs/readme/Security.md)
+- [⚠️Security](docs/readme/Security.md)
 - [Cipher comparison](docs/readme/Cipher_comparison.md)
 - [Others](docs/readme/Considerations.md)
 
@@ -119,8 +115,8 @@ If you find any issues or vulnerabilities or you'd like a feature, please follow
 
 Feel free to fork, change, and use it however you want. We always appreciate it if you build something interesting and feel like sharing pull requests.
 
-- How to contribute
-  Please see [CONTRIBUTING.md](.github/CONTRIBUTING.md).
+How to contribute:
+- Please see [CONTRIBUTING.md](.github/CONTRIBUTING.md)
 
 # Follow us
 
@@ -131,6 +127,7 @@ Feel free to fork, change, and use it however you want. We always appreciate it 
 
 # Get in touch
 
+- Part of [xorio](https://xorio.rs/)
 - [Slack](https://bit.ly/3UU1oXi)
 - [hello@xorio.rs](mailto:hello@xorio.rs)
 - [LinkedIn](https://www.linkedin.com/company/xorio)
