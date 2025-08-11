@@ -7,7 +7,7 @@ use ring::aead::{
 };
 use ring::error;
 use shush_rs::{ExposeSecret, SecretVec};
-use tracing::{error, instrument, warn};
+use tracing::{debug ,error, instrument, warn};
 
 use crate::crypto::buf_mut::BufMut;
 use crate::crypto::write::BLOCK_SIZE;
@@ -110,9 +110,11 @@ impl<R: Read> Read for RingCryptoRead<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         // first try to read remaining decrypted data
         let len = self.buf.read(buf)?;
+        debug!("First try to read from BufMut, managed to read {} bytes", len);
         if len != 0 {
             return Ok(len);
         }
+        debug!("BufMut read returned 0, decrypting new block with index {}", self.block_index);
         // we read all the data from the buffer, so we need to read a new block and decrypt it
         decrypt_block!(
             self.block_index,
@@ -121,7 +123,10 @@ impl<R: Read> Read for RingCryptoRead<R> {
             self.last_nonce,
             self.opening_key
         );
+        debug!("BufMut size {}", self.buf.available());
         let len = self.buf.read(buf)?;
+        debug!("BufMut available to read {}",self.buf.available_read());
+        debug!("Read {} bytes from BufMut",len);
         Ok(len)
     }
 }
@@ -166,6 +171,7 @@ impl<R: Read + Seek> RingCryptoRead<R> {
 
     fn get_plaintext_len(&mut self) -> io::Result<u64> {
         let ciphertext_len = self.input.as_mut().unwrap().stream_len()?;
+        debug!("Actual file stream length (encrypted) -> {}",ciphertext_len);
         if ciphertext_len == 0 {
             return Ok(0);
         }
@@ -179,8 +185,16 @@ impl<R: Read + Seek> RingCryptoRead<R> {
 impl<R: Read + Seek> Seek for RingCryptoRead<R> {
     #[allow(clippy::cast_possible_wrap)]
     #[allow(clippy::cast_sign_loss)]
+    #[instrument(name = "RingCryptoReader:seek", skip(self, pos))]
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let plaintext_len = self.get_plaintext_len()?;
+        debug!("plaintext len {} with seekFrom {:?}",plaintext_len,pos);
+        let generic_input_reader = self.input.as_mut().unwrap();
+        let input_pos = generic_input_reader.stream_position().map_err(|err| {
+            error!(err = %err, "getting position");
+            err
+        })?;
+        debug!("Before seeking: real file input file stream position - default seek used {}",input_pos);
         let new_pos = match pos {
             SeekFrom::Start(pos) => pos as i64,
             SeekFrom::End(pos) => plaintext_len as i64 + pos,
@@ -195,6 +209,7 @@ impl<R: Read + Seek> Seek for RingCryptoRead<R> {
         // keep in bounds
         let mut new_pos = new_pos as u64;
         new_pos = new_pos.min(plaintext_len);
+        debug!("self.pos {} and new_pos {}", self.pos(), new_pos);
         if self.pos() == new_pos {
             return Ok(new_pos);
         }
@@ -214,14 +229,36 @@ impl<R: Read + Seek> Seek for RingCryptoRead<R> {
                 ))?;
             } else {
                 // we need to read a new block and seek inside that block
+                // changing block here as well 
+                // POSSIBLE FIX : Reset underlying stream at block start
+                let generic_input_reader = self.input.as_mut().unwrap();
+                let input_pos = generic_input_reader.stream_position().map_err(|err| {
+                    error!(err = %err, "getting position");
+                    err
+                })?;
+                debug!("Same block : real file input file stream position - default seek used {}",input_pos);
+                debug!("Resetting real file input stream position at the beginning of block {}",new_block_index);
+                let new_input_pos = generic_input_reader.seek(SeekFrom::Start(
+                    new_block_index * self.ciphertext_block_size as u64,
+                ))?;
+                debug!("Same block : real file input file stream position - default seek used {}",new_input_pos);
                 let plaintext_block_size = self.plaintext_block_size;
+                self.buf.clear(); // not really necessary
+                self.block_index = new_block_index;
+                debug!("self.buf>0 seeking forward with len {}%{}={} ",new_pos,plaintext_block_size, new_pos % plaintext_block_size as u64);
                 stream_util::seek_forward(self, new_pos % plaintext_block_size as u64, true)?;
             }
         } else {
             // change block
-            self.input.as_mut().unwrap().seek(SeekFrom::Start(
+            let generic_input_reader = self.input.as_mut().unwrap();
+            generic_input_reader.seek(SeekFrom::Start(
                 new_block_index * self.ciphertext_block_size as u64,
             ))?;
+            let input_pos = generic_input_reader.stream_position().map_err(|err| {
+                error!(err = %err, "getting position");
+                err
+            })?;
+            debug!("Changed block : real file input file stream position - default seek used {}",input_pos);
             self.buf.clear();
             self.block_index = new_block_index;
             if new_pos % self.plaintext_block_size as u64 == 0 {
@@ -229,6 +266,7 @@ impl<R: Read + Seek> Seek for RingCryptoRead<R> {
                 // the block_index but the seek seek_forward from below will not decrypt anything
                 // as the offset in new block is 0. In that case the po()
                 // method is affected as it will use the wrong block_index value
+                debug!("executing decrypt macro");
                 decrypt_block!(
                     self.block_index,
                     self.buf,
@@ -239,6 +277,7 @@ impl<R: Read + Seek> Seek for RingCryptoRead<R> {
             }
             // seek inside new block
             let plaintext_block_size = self.plaintext_block_size;
+            debug!("seeking forward with len {}%{}={} ",new_pos,plaintext_block_size, new_pos % plaintext_block_size as u64);
             stream_util::seek_forward(self, new_pos % plaintext_block_size as u64, true)?;
         }
         Ok(self.pos())

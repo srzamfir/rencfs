@@ -489,7 +489,6 @@ impl WriteHandleContextOperation {
         }
     }
 }
-
 struct WriteHandleContext {
     ino: u64,
     attr: TimesAndSizeFileAttr,
@@ -1364,7 +1363,7 @@ impl EncryptedFs {
     ///
     /// If we try to read outside of file size, we return zero bytes.
     /// If the file is not opened for read, it will return an error of type [FsError::InvalidFileHandle].
-    #[instrument(skip(self, buf), fields(len = %buf.len()), ret(level = Level::DEBUG))]
+    #[instrument(skip(self,buf), fields(len = %buf.len()), ret(level = Level::DEBUG))]
     #[allow(clippy::missing_errors_doc)]
     #[allow(clippy::cast_possible_truncation)]
     pub async fn read(
@@ -1386,9 +1385,33 @@ impl EncryptedFs {
 
         let _size = self.get_attr(ino).await?.size;
 
+        // OPTIMIZE this so that we flush only when there's an overlap (we try to read beyond what was flushed)
+        // if offset is beyond file size try first to flush the pending writes
+        // keep buffer offset from file for each writer
+        // when we get a read if there are writers with data in the interval where read is, then call flush_and_reset_writers and recreate reader too
+        // this will make sure data is flushed and new reader will pick it up
+        // and as we do this only when read/write buffers overlaps then it will not add a lot of penalty
+
         let lock = self
             .read_write_locks
             .get_or_insert_with(ino, || RwLock::new(false));
+
+        let write_handle;
+        {
+            let opened_files_for_write_guard = self.opened_files_for_write.read().await;
+            write_handle =  opened_files_for_write_guard.get(&ino).cloned();
+        }
+        match write_handle {
+           Some(write_handle) => {
+            debug!("file is still opened for write with fh={} and inode={}",&write_handle,&ino);
+            debug!("flushing all writers for this inode..");
+            let _write_guard = lock.write().await;
+            // flush writers
+            self.flush_and_reset_writers(ino).await?
+           },
+           None => debug!("file is not opened for write with inode={}",&ino),
+        }
+
         let _read_guard = lock.read().await;
 
         let guard = self.read_handles.read().await;
@@ -1402,25 +1425,31 @@ impl EncryptedFs {
         }
         if buf.is_empty() {
             // no-op
+            debug!("Empty buffer");
             return Ok(0);
         }
 
         // read data
         let (_buf, len) = {
             let reader = ctx.reader.as_mut().unwrap();
-
-            reader.seek(SeekFrom::Start(offset)).map_err(|err| {
+            debug!("Before seeking (reader.seek) (self.)pos -> {:?}",reader.stream_position());
+            debug!("Trying to seek to desired offset by FUSE {}",offset);
+            let buf_pos = reader.seek(SeekFrom::Start(offset)).map_err(|err| {
                 error!(err = %err, "seeking");
                 err
             })?;
+            debug!("self.pos after seek {}",buf_pos);
             let pos = reader.stream_position().map_err(|err| {
                 error!(err = %err, "getting position");
                 err
             })?;
+            debug!("After seeking (reader.seek) (seek.)pos -> {}",pos);
             if pos != offset {
                 // we would need to seek after filesize
+                debug!("seeking after filesize pos ->{}, offset->{}",pos, offset);
                 return Ok(0);
             }
+            debug!("Initial buf len -> {}", buf.len());
             // keep block size to max the cipher can handle
             #[allow(clippy::cast_possible_truncation)]
             let buf = if offset + buf.len() as u64 > self.cipher.max_plaintext_len() as u64 {
@@ -1434,9 +1463,10 @@ impl EncryptedFs {
                 error!(err = %err, "reading");
                 err
             })?;
+            let reader = ctx.reader.as_mut().unwrap();
+            debug!("After reading (read.seek) (self.)pos -> {:?}", reader.stream_position());
             (buf, len)
         };
-
         ctx.attr.atime = SystemTime::now();
         drop(ctx);
 
@@ -1599,7 +1629,7 @@ impl EncryptedFs {
     /// If we write outside file size, we fill up with zeros until the `offset`.
     /// If the file is not opened for writing,
     /// it will return an error of type [FsError::InvalidFileHandle].
-    #[instrument(skip(self, buf), fields(len = %buf.len()), ret(level = Level::DEBUG))]
+    #[instrument(skip(self,buf), fields(len = %buf.len()), ret(level = Level::DEBUG))]
     pub async fn write(&self, ino: u64, offset: u64, buf: &[u8], handle: u64) -> FsResult<usize> {
         if self.read_only {
             return Err(FsError::ReadOnly);
@@ -1725,7 +1755,9 @@ impl EncryptedFs {
                 .read_write_locks
                 .get_or_insert_with(ctx.ino, || RwLock::new(false));
             let write_guard = lock.write().await;
+            // this will do a noop
             ctx.writer.as_mut().expect("writer is missing").flush()?;
+            // this will try to actually flush
             File::open(self.contents_path(ctx.ino))?.sync_all()?;
             File::open(self.contents_path(ctx.ino).parent().unwrap())?.sync_all()?;
             drop(write_guard);
@@ -2178,7 +2210,6 @@ impl EncryptedFs {
         save_attr: bool,
     ) -> FsResult<()> {
         let path = self.contents_path(ino);
-
         // read
         let lock = self.opened_files_for_read.read().await;
         if let Some(set) = lock.get(&ino) {
@@ -2190,7 +2221,8 @@ impl EncryptedFs {
                 self.set_attr(ino, set_attr).await?;
                 let attr = self.get_inode_from_storage(ino).await?;
                 let mut ctx = guard.get(handle).unwrap().lock().await;
-                let reader = self.create_read_seek(File::open(&path)?).await?;
+                let mut reader = self.create_read_seek(File::open(&path)?).await?;
+                debug!("reseting handle {} with new reader size {:?}",handle,reader.stream_len());
                 ctx.reader = Some(Box::new(reader));
                 ctx.attr = attr.into();
             }

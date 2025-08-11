@@ -26,30 +26,29 @@ pub fn seek_forward<R: Read>(r: &mut R, len: u64, stop_on_eof: bool) -> io::Resu
     if len == 0 {
         return Ok(0);
     }
-
     let mut buffer = vec![0; BUF_SIZE];
     let mut pos = 0_u64;
     loop {
         #[allow(clippy::cast_possible_truncation)]
-        let read_len = if pos + buffer.len() as u64 > len {
+        let bytes_to_read = if pos + buffer.len() as u64 > len {
             (len - pos) as usize
         } else {
             buffer.len()
         };
-        if read_len == 0 {
+        if bytes_to_read == 0 {
             break;
         }
-        let read = r.read(&mut buffer[..read_len]).inspect_err(|err| {
+        let bytes_read = r.read(&mut buffer[..bytes_to_read]).inspect_err(|err| {
             error!(
                 "error reading from file pos {} len {} {err}",
                 pos.to_formatted_string(&Locale::en),
-                read_len.to_formatted_string(&Locale::en)
+                bytes_to_read.to_formatted_string(&Locale::en)
             );
         })?;
-        pos += read as u64;
+        pos += bytes_read as u64;
         if pos == len {
             break;
-        } else if read == 0 {
+        } else if bytes_read == 0 {
             if stop_on_eof {
                 break;
             }
@@ -139,19 +138,26 @@ pub fn fill_zeros(w: &mut impl Write, len: u64) -> io::Result<()> {
     Ok(())
 }
 /// Read trying to fill the buffer but stops on eof
+#[instrument(skip(r, buf))]
 pub fn read(mut r: impl Read, buf: &mut [u8]) -> io::Result<usize> {
-    let mut read = 0;
+    let mut bytes_read = 0;
+    debug!("trying to fill the requested fuse buffer size {}",buf.len());
     loop {
-        let len = r.read(&mut buf[read..])?;
+        let len = r.read(&mut buf[bytes_read..])?;
         if len == 0 {
             break;
         }
-        read += len;
-        if read == buf.len() {
+        bytes_read += len; 
+        // if we read less then buf.len (that has been requested by fuse)
+        // we try to read once again however this might happen either because 
+        // 1. there were not enough bytes in the buffer yet
+        // 2. we read what was there and reached EOF -> BUG
+        if bytes_read == buf.len() {
             break;
         }
     }
-    Ok(read)
+    debug!("managed to read total {}",bytes_read);
+    Ok(bytes_read)
 }
 
 #[allow(dead_code)]
